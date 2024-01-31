@@ -17,7 +17,6 @@ class _HomeViewState extends State<HomeView> {
   String result = "";
   CameraController? cameraController;
   CameraImage? imgCamera;
-  Rect? highestConfidenceBoundingBox;
 
   @override
   void initState() {
@@ -34,14 +33,15 @@ class _HomeViewState extends State<HomeView> {
 
   loadModel() async {
     await Tflite.loadModel(
-      model: 'assets/mobilenet.tflite',
-      labels: 'assets/mobilenet.txt',
+      model: 'assets/model_unquant.tflite',
+      labels: 'assets/labels.txt',
     );
   }
 
   Future<void> initCamera() async {
     try {
-      cameraController = CameraController(widget.cameras[0], ResolutionPreset.high);
+      cameraController =
+          CameraController(widget.cameras[0], ResolutionPreset.high);
       await cameraController!.initialize();
       if (mounted) {
         setState(() {
@@ -61,10 +61,9 @@ class _HomeViewState extends State<HomeView> {
     }
   }
 
-
   runModelOnStreamFrames() async {
     if (imgCamera != null) {
-      List<dynamic>? newRecognitions = await Tflite.runModelOnFrame(
+      List<dynamic>? recognitions = await Tflite.runModelOnFrame(
         bytesList: imgCamera!.planes.map((plane) => plane.bytes).toList(),
         imageHeight: imgCamera!.height,
         imageWidth: imgCamera!.width,
@@ -72,57 +71,35 @@ class _HomeViewState extends State<HomeView> {
         imageStd: 127.5,
         rotation: 90,
         numResults: 1,
-        threshold: 0.1,
+        threshold: 0.99,
         asynch: true,
       );
 
       setState(() {
-        if (newRecognitions != null && newRecognitions.isNotEmpty) {
-          double maxConfidence = 0.0;
-          var maxConfidenceRecognition;
-
-          for (var recognition in newRecognitions) {
+        if (recognitions != null && recognitions.isNotEmpty) {
+          double confidence = recognitions.first["confidence"];
+          String label = recognitions.first['label'];
           if (kDebugMode) {
-            print( "========== the item recognited : ${recognition.toString()} ============");
-            print("Type of recognition: ${recognition.runtimeType}");
+            print('=========== confidence : $confidence ========== ');
           }
-              double confidence = recognition["confidence"];
-              if (confidence > maxConfidence) {
-                maxConfidence = confidence;
-                maxConfidenceRecognition = recognition;
-              }
-
-          }
-
-          if (maxConfidenceRecognition != null) {
-            // double x = maxConfidenceRecognition["rect"]["x"] *
-            //     cameraController!.value.previewSize!.width;
-            // double y = maxConfidenceRecognition["rect"]["y"] *
-            //     cameraController!.value.previewSize!.height;
-            // double w = maxConfidenceRecognition["rect"]["w"] *
-            //     cameraController!.value.previewSize!.width;
-            // double h = maxConfidenceRecognition["rect"]["h"] *
-            //     cameraController!.value.previewSize!.height;
-            //
-            // highestConfidenceBoundingBox = Rect.fromPoints(
-            //   Offset(x, y),
-            //   Offset(x + w, y + h),
-            // );
-
-            result =
-                "${maxConfidenceRecognition['label']}  ${maxConfidenceRecognition['confidence'].toStringAsFixed(2)}";
-          } else {
-            highestConfidenceBoundingBox = null;
-            result = "";
+          if (confidence >= 0.999) {
+            result = "$label  ${confidence.toStringAsFixed(2)}";
           }
         } else {
-          highestConfidenceBoundingBox = null;
           result = "";
         }
 
         isWorking = false;
       });
     }
+  }
+
+  Future<void> closeCamera() async {
+    setState(() {
+      imgCamera = null;
+    });
+    await cameraController?.stopImageStream();
+    await cameraController?.dispose();
   }
 
   @override
@@ -140,7 +117,7 @@ class _HomeViewState extends State<HomeView> {
                 isWorking: isWorking,
                 initCamera: initCamera,
                 imgCamera: imgCamera,
-                boundingBox: highestConfidenceBoundingBox,
+                closeCamera: closeCamera,
               ),
               ResultDisplay(result: result),
             ],
@@ -156,15 +133,15 @@ class CameraPreviewWidget extends StatelessWidget {
   final bool isWorking;
   final VoidCallback initCamera;
   final CameraImage? imgCamera;
-  final Rect? boundingBox;
+  final VoidCallback closeCamera;
 
   const CameraPreviewWidget({
     Key? key,
     required this.cameraController,
     required this.isWorking,
     required this.initCamera,
+    required this.closeCamera,
     required this.imgCamera,
-    required this.boundingBox,
   }) : super(key: key);
 
   @override
@@ -180,63 +157,44 @@ class CameraPreviewWidget extends StatelessWidget {
           ),
         ),
         Center(
-          child: TextButton(
-            onPressed: initCamera,
-            child: Container(
-              margin: const EdgeInsets.only(top: 35),
-              height: 270,
-              width: 360,
-              child: imgCamera == null
-                  ? const SizedBox(
-                      height: 270,
-                      width: 360,
-                      child: Icon(
-                        Icons.photo_camera_front,
-                        color: Colors.blueAccent,
-                        size: 40,
-                      ),
-                    )
-                  : AspectRatio(
-                      aspectRatio: cameraController!.value.aspectRatio,
-                      child: CameraPreview(cameraController!),
-                    ),
-            ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              TextButton(
+                onPressed: initCamera,
+                child: Container(
+                  margin: const EdgeInsets.only(top: 35),
+                  height: 270,
+                  width: 360,
+                  child: imgCamera == null
+                      ? const SizedBox(
+                          height: 270,
+                          width: 360,
+                          child: Icon(
+                            Icons.photo_camera_front,
+                            color: Colors.blueAccent,
+                            size: 40,
+                          ),
+                        )
+                      : AspectRatio(
+                          aspectRatio: cameraController!.value.aspectRatio,
+                          child: CameraPreview(cameraController!),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (imgCamera != null)
+                ElevatedButton(
+                  onPressed: closeCamera,
+                  child: const Text("Close Camera"),
+                ),
+            ],
           ),
         ),
-        // CustomPaint(
-        //   painter: BoundingBoxPainter(boundingBox),
-        //   child: const SizedBox(
-        //     height: 270,
-        //     width: 360,
-        //   ),
-        // ),
       ],
     );
   }
 }
-
-// class BoundingBoxPainter extends CustomPainter {
-//   final Rect? boundingBox;
-//
-//   BoundingBoxPainter(this.boundingBox);
-//
-//   @override
-//   void paint(Canvas canvas, Size size) {
-//     final paint = Paint()
-//       ..color = Colors.red
-//       ..style = PaintingStyle.stroke
-//       ..strokeWidth = 2.0;
-//
-//     if (boundingBox != null) {
-//       canvas.drawRect(boundingBox!, paint);
-//     }
-//   }
-//
-//   @override
-//   bool shouldRepaint(covariant CustomPainter oldDelegate) {
-//     return true;
-//   }
-// }
 
 class ResultDisplay extends StatelessWidget {
   final String result;
