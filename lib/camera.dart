@@ -2,13 +2,12 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tflite/flutter_tflite.dart';
-
 import 'main.dart';
 
 class CameraPreviewScreen extends StatefulWidget {
   const CameraPreviewScreen({
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<CameraPreviewScreen> createState() => _CameraPreviewScreenState();
@@ -25,6 +24,13 @@ class _CameraPreviewScreenState extends State<CameraPreviewScreen> {
     super.initState();
     loadModel();
     initCamera();
+  }
+
+  loadModel() async {
+    await Tflite.loadModel(
+      model: 'assets/model_unquant.tflite',
+      labels: 'assets/labels.txt',
+    );
   }
 
   Future<void> initCamera() async {
@@ -54,7 +60,12 @@ class _CameraPreviewScreenState extends State<CameraPreviewScreen> {
   }
 
   runModelOnStreamFrames() async {
-    if (imgCamera != null && mounted) {
+    if (imgCamera != null) {
+      // Extract the pixel values from the entire image
+      List<int> pixelValues = imgCamera!.planes[0].bytes;
+      double averageReflection =
+          pixelValues.reduce((a, b) => a + b) / pixelValues.length;
+      print("========== I am reflection average  : $averageReflection ==========");
       List<dynamic>? recognitions = await Tflite.runModelOnFrame(
         bytesList: imgCamera!.planes.map((plane) => plane.bytes).toList(),
         imageHeight: imgCamera!.height,
@@ -63,7 +74,7 @@ class _CameraPreviewScreenState extends State<CameraPreviewScreen> {
         imageStd: 127.5,
         rotation: 90,
         numResults: 1,
-        threshold: 0.99,
+        threshold: 0.9,
         asynch: true,
       );
       if (mounted) {
@@ -73,19 +84,17 @@ class _CameraPreviewScreenState extends State<CameraPreviewScreen> {
             String label = recognitions.first['label'];
 
             if (confidence >= 0.999) {
-              // Extract the pixel values from the entire image
-              List<int> pixelValues = imgCamera!.planes[0].bytes;
-
               // Check for reflections (a simple example)
               int reflectionThreshold =
                   200; // Adjust this threshold based on your observations
-              bool hasReflection =
-                  pixelValues.any((value) => value > reflectionThreshold);
+              // bool hasReflection =
+              //     pixelValues.any((value) => value > reflectionThreshold);
               // Calculate average reflection intensity
-              double averageReflection =
-                  pixelValues.reduce((a, b) => a + b) / pixelValues.length;
-              print(
-                  " ============= Object: $label, Confidence: $confidence, Average Reflection: $averageReflection ============");
+
+              if (kDebugMode) {
+                print(
+                    " ============= Object: $label, Confidence: $confidence,  ============");
+              }
 
               result = "$label  ${confidence.toStringAsFixed(2)}";
             }
@@ -100,13 +109,6 @@ class _CameraPreviewScreenState extends State<CameraPreviewScreen> {
   }
 
   // Future<void> closeCamera() async {}
-
-  loadModel() async {
-    await Tflite.loadModel(
-      model: 'assets/model_unquant.tflite',
-      labels: 'assets/labels.txt',
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -150,8 +152,6 @@ class _CameraPreviewScreenState extends State<CameraPreviewScreen> {
 
                   cameraController = null;
                   imgCamera = null;
-
-
                 },
                 child: const Text("Close Camera"),
               ),
