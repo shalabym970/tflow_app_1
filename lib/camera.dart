@@ -61,11 +61,6 @@ class _CameraPreviewScreenState extends State<CameraPreviewScreen> {
 
   runModelOnStreamFrames() async {
     if (imgCamera != null) {
-      // Extract the pixel values from the entire image
-      List<int> pixelValues = imgCamera!.planes[0].bytes;
-      double averageReflection =
-          pixelValues.reduce((a, b) => a + b) / pixelValues.length;
-      print("========== I am reflection average  : $averageReflection ==========");
       List<dynamic>? recognitions = await Tflite.runModelOnFrame(
         bytesList: imgCamera!.planes.map((plane) => plane.bytes).toList(),
         imageHeight: imgCamera!.height,
@@ -84,19 +79,15 @@ class _CameraPreviewScreenState extends State<CameraPreviewScreen> {
             String label = recognitions.first['label'];
 
             if (confidence >= 0.999) {
-              // Check for reflections (a simple example)
-              int reflectionThreshold =
-                  200; // Adjust this threshold based on your observations
-              // bool hasReflection =
-              //     pixelValues.any((value) => value > reflectionThreshold);
-              // Calculate average reflection intensity
+              Uint8List bytes = concatenatePlanes(imgCamera!.planes);
 
               if (kDebugMode) {
                 print(
-                    " ============= Object: $label, Confidence: $confidence,  ============");
+                    " =============== Reflection Power: ${bytes.toString()} ==========");
               }
 
-              result = "$label  ${confidence.toStringAsFixed(2)}";
+              result =
+                  "Object : $label  confidence :${confidence.toStringAsFixed(2)}";
             }
           } else {
             result = "";
@@ -106,6 +97,11 @@ class _CameraPreviewScreenState extends State<CameraPreviewScreen> {
         });
       }
     }
+  }
+
+  Uint8List concatenatePlanes(List<Plane> planes) {
+    List<Uint8List> bytesList = planes.map((plane) => plane.bytes).toList();
+    return Uint8List.fromList(bytesList.expand((list) => list).toList());
   }
 
   // Future<void> closeCamera() async {}
